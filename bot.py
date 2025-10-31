@@ -6,28 +6,32 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import os
-import re
 
 # ---------------- CONFIG ----------------
-TOKEN = os.environ.get("DISCORD_TOKEN")  # Bot token from environment
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-CHANNEL_ID = 1419693652732805224           # Embed channel
-RULES_CHANNEL_ID = 123456789012345678
+CHANNEL_ID = 1419693652732805224
+RULES_CHANNEL_ID = 1416158383039320117
 CATEGORY_ID = 1417817985825116253
 TRANSCRIPT_CHANNEL_ID = 1432416214717829242
 STOCK_ROLE_ID = 1432421803057348608
-STOCK_MESSAGE_CHANNEL_ID = 1415420581675008064  # Channel for stock emoji
-STOCK_MESSAGE_ID = 1430171667438637146          # Message ID to update
+STOCK_MESSAGE_CHANNEL_ID = 1415420581675008064
+STOCK_MESSAGE_ID = 1430171667438637146
+INFO_CHANNEL_ID = 1433003641681477644
+REACTION_CHANNEL_ID = 1416158383039320117
 
 # ---------------- BOT SETUP ----------------
 intents = discord.Intents.default()
+intents.messages = True
+intents.message_content = True
+intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-ticket_counter = 0
-bot.status_embed_message_id = None
 bot.status_emoji = "🟢"
+bot.status_embed_message_id = None
+ticket_counter = 0
 
-# ------------------ KEEP ALIVE ------------------
+# ---------------- KEEP ALIVE ----------------
 app = Flask(__name__)
 
 @app.route("/")
@@ -42,7 +46,7 @@ def keep_alive():
     t = Thread(target=_run_flask, daemon=True)
     t.start()
 
-# ---------------- Utility ----------------
+# ---------------- UTILITIES ----------------
 async def get_next_ticket_number(guild: discord.Guild):
     global ticket_counter
     category = discord.utils.get(guild.categories, id=CATEGORY_ID)
@@ -57,7 +61,6 @@ async def get_next_ticket_number(guild: discord.Guild):
         numbers = [int(c.name.split("-")[1]) for c in ticket_channels]
         ticket_counter = max(numbers) + 1
     return ticket_counter
-
 
 async def send_transcript(channel: discord.TextChannel):
     transcript_channel = channel.guild.get_channel(TRANSCRIPT_CHANNEL_ID)
@@ -76,8 +79,8 @@ async def send_transcript(channel: discord.TextChannel):
     )
     await transcript_channel.send(embed=embed, file=file)
 
-# ---------------- Ticket Buttons ----------------
-class SupportControls(discord.ui.View):
+# ---------------- VIEWS ----------------
+class SupportControls(View):
     def __init__(self, channel: discord.TextChannel):
         super().__init__(timeout=None)
         self.channel = channel
@@ -87,7 +90,7 @@ class SupportControls(discord.ui.View):
         await send_transcript(self.channel)
         await interaction.response.send_message("📄 Transcript sent to logs.", ephemeral=True)
 
-    @discord.ui.button(label="Open", style=discord.ButtonStyle.success, emoji="🔓")
+    @discord.ui.button(label="Reopen", style=discord.ButtonStyle.success, emoji="🔓")
     async def reopen(self, interaction: discord.Interaction, button: discord.ui.Button):
         overwrites = self.channel.overwrites
         overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -100,8 +103,7 @@ class SupportControls(discord.ui.View):
         await send_transcript(self.channel)
         await self.channel.delete()
 
-
-class CloseButton(discord.ui.View):
+class CloseButton(View):
     def __init__(self, channel: discord.TextChannel):
         super().__init__(timeout=None)
         self.channel = channel
@@ -113,25 +115,12 @@ class CloseButton(discord.ui.View):
             description=f"🔒 Ticket closed by {interaction.user.mention}",
             color=discord.Color.dark_gray(),
         )
-        embed.set_author(
-            name="Ticket Tool",
-            icon_url="https://cdn.discordapp.com/emojis/1201947996109092925.webp?size=96&quality=lossless",
-        )
+        embed.set_author(name="Ticket Tool")
         await interaction.response.send_message(embed=embed, view=SupportControls(self.channel))
 
-
-# ---------------- Ticket Modal ----------------
 class TicketModal(discord.ui.Modal, title="Ranked Enabled Account"):
-    quantity = discord.ui.TextInput(
-        label="How many level 20 accounts are you buying?",
-        placeholder="Enter quantity...",
-        required=True,
-    )
-    payment = discord.ui.TextInput(
-        label="Payment method",
-        placeholder="Robux, Brainrots, Nitro, etc...",
-        required=True,
-    )
+    quantity = discord.ui.TextInput(label="How many accounts?", required=True)
+    payment = discord.ui.TextInput(label="Payment method", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
@@ -140,33 +129,30 @@ class TicketModal(discord.ui.Modal, title="Ranked Enabled Account"):
         category = discord.utils.get(guild.categories, id=CATEGORY_ID)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, embed_links=True),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(view_channel=True),
         }
         ticket_channel = await guild.create_text_channel(
-            name=f"ticket-{formatted_number}", category=category, overwrites=overwrites, reason="New ticket created"
+            name=f"ticket-{formatted_number}", category=category, overwrites=overwrites
         )
         embed = discord.Embed(
-            description=(
-                "Please wait for a response. Do **NOT CLOSE THIS TICKET** or you may be muted.\n"
-                f"While you wait, please read <#{RULES_CHANNEL_ID}>."
-            ),
+            description=f"Please wait for a response. Read <#{RULES_CHANNEL_ID}> while waiting.",
             color=discord.Color.dark_gray(),
         )
-        embed.set_author(
-            name="Ticket Tool",
-            icon_url="https://cdn.discordapp.com/emojis/1201947996109092925.webp?size=96&quality=lossless",
-        )
         embed.add_field(name="Quantity", value=f"```{self.quantity.value}```", inline=False)
-        embed.add_field(name="Payment Method", value=f"```{self.payment.value}```", inline=False)
+        embed.add_field(name="Payment", value=f"```{self.payment.value}```", inline=False)
         await ticket_channel.send(embed=embed, view=CloseButton(ticket_channel))
-        await interaction.response.send_message(f"Ticket created: {ticket_channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
 
-
-# ---------------- Purchase & Stock Buttons ----------------
-class PurchaseButton(discord.ui.View):
+class PurchaseButton(View):
     def __init__(self):
         super().__init__(timeout=None)
+        info_button = Button(
+            label="❓ Info",
+            style=discord.ButtonStyle.link,
+            url=f"https://discord.com/channels/1415420581675008064/{INFO_CHANNEL_ID}"
+        )
+        self.add_item(info_button)
 
     @discord.ui.button(label="🛒 Purchase", style=discord.ButtonStyle.success)
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -174,23 +160,32 @@ class PurchaseButton(discord.ui.View):
 
     @discord.ui.button(label="📦 Check Stock", style=discord.ButtonStyle.secondary)
     async def check_stock(self, interaction: discord.Interaction, button: discord.ui.Button):
-        stock_role = interaction.guild.get_role(STOCK_ROLE_ID)
-        if stock_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ You do not have permission to check stock.", ephemeral=True)
-            return
-        stock_count = 42
-        await interaction.response.send_message(f"📦 Current stock: {stock_count}", ephemeral=True)
+        await interaction.response.send_message(f"📦 Current stock: {bot.status_emoji}", ephemeral=True)
 
-
-# ---------------- /embed Command ----------------
-@bot.tree.command(name="embed", description="Send purchase embed (Admin Only)")
+# ---------------- COMMANDS ----------------
+@bot.tree.command(name="embed", description="Post the payment embed with purchase buttons")
 @app_commands.checks.has_permissions(administrator=True)
 async def embed_command(interaction: discord.Interaction):
+    await update_embed(interaction, send_message=True)
+
+@bot.tree.command(name="changestock", description="Change the stock emoji (visible to everyone)")
+async def changestock(interaction: discord.Interaction, emoji: str):
+    bot.status_emoji = emoji
+    await update_embed(interaction)
+    await interaction.response.send_message(f"✅ Stock emoji updated to {emoji}!", ephemeral=False)
+
+@bot.tree.command(name="update", description="Refresh the payment embed manually")
+@app_commands.checks.has_permissions(administrator=True)
+async def update_command(interaction: discord.Interaction):
+    await update_embed(interaction)
+    await interaction.response.send_message("✅ Embed updated successfully!", ephemeral=True)
+
+async def update_embed(interaction: discord.Interaction, send_message: bool = False):
     channel = bot.get_channel(CHANNEL_ID)
     if not channel:
-        await interaction.response.send_message("❌ Channel not found.", ephemeral=True)
         return
 
+    # Delete old embed if exists
     if bot.status_embed_message_id:
         try:
             old_message = await channel.fetch_message(bot.status_embed_message_id)
@@ -199,93 +194,41 @@ async def embed_command(interaction: discord.Interaction):
             pass
 
     embed = discord.Embed(
-        title="",
         description=(
             "**# PAYMENT METHODS**\n"
             f"**# STATUS: {bot.status_emoji}**\n"
             "> <:emoji:1415780267154477147>  **400 Robux**\n"
-            "> <:loscomb:1427626337140609034>  **Brainrots 15M/s**\n\n"
-            f"Check out <#{RULES_CHANNEL_ID}> to see that we are legit!"
+            "> <:loscomb:1427626337140609034>  **~~Brainrots 15M/s~~** (offsale for now)\n\n"
+            f"Check out <#{RULES_CHANNEL_ID}> to see that we’re legit!"
         ),
         color=discord.Color.from_str("#FFA43D"),
     )
     embed.set_author(name="Ranked Enabled Account")
-    embed.set_footer(text="thanks for buying!")
     embed.set_image(
-        url="https://media.discordapp.net/attachments/1415427200232067186/1432412906284126278/wwdwdq_2_upscayl_4x_high-fidelity-4x_1_1.png?ex=6900f5f9&is=68ffa479&hm=34eb3cffe291e4deb3ac74c37170645cca62d837c849ad433dd6eb36148a289a&=&format=webp&quality=lossless"
+        url="https://media.discordapp.net/attachments/1415427200232067186/1432412906284126278/wwdwdq_2_upscayl_4x_high-fidelity-4x_1_1.png?ex=6902f039&is=69019eb9&hm=9f6330f6995a97d1150e6baef00d4baa087b2ee5c66e5a8a64fc3a41ea6cb43e&=&format=webp&quality=lossless"
     )
+    embed.set_footer(text="Thanks for buying!")
 
     message = await channel.send(embed=embed, view=PurchaseButton())
     bot.status_embed_message_id = message.id
-    await interaction.response.send_message("✅ Embed sent successfully!", ephemeral=True)
 
-
-# ---------------- /status Command ----------------
-@bot.tree.command(name="status", description="Change the embed status emoji (Admin Only)")
-@app_commands.describe(emoji="The new status emoji (e.g., 🟢, 🟠, 🔴)")
-@app_commands.checks.has_permissions(administrator=True)
-async def status_command(interaction: discord.Interaction, emoji: str):
-    bot.status_emoji = emoji
-
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel and bot.status_embed_message_id:
+# ---------------- AUTO ✅ REACT ----------------
+@bot.event
+async def on_message(message):
+    if message.channel.id == REACTION_CHANNEL_ID and not message.author.bot:
         try:
-            old_message = await channel.fetch_message(bot.status_embed_message_id)
-            await old_message.delete()
+            await message.add_reaction("✅")
         except:
             pass
+    await bot.process_commands(message)
 
-        embed = discord.Embed(
-            title="",
-            description=(
-                "**# PAYMENT METHODS**\n"
-                f"**# STATUS: {bot.status_emoji}**\n"
-                "> <:emoji:1415780267154477147>  **400 Robux**\n"
-                "> <:loscomb:1427626337140609034>  **Brainrots 15M/s**\n\n"
-                f"Check out <#{RULES_CHANNEL_ID}> to see that we are legit!"
-            ),
-            color=discord.Color.from_str("#FFA43D"),
-        )
-        embed.set_author(name="Ranked Enabled Account")
-        embed.set_footer(text="thanks for buying!")
-        embed.set_image(
-            url="https://media.discordapp.net/attachments/1415427200232067186/1432412906284126278/wwdwdq_2_upscayl_4x_high-fidelity-4x_1_1.png?ex=6900f5f9&is=68ffa479&hm=34eb3cffe291e4deb3ac74c37170645cca62d837c849ad433dd6eb36148a289a&=&format=webp&quality=lossless"
-        )
-
-        message = await channel.send(embed=embed, view=PurchaseButton())
-        bot.status_embed_message_id = message.id
-
-    stock_channel = bot.get_channel(STOCK_MESSAGE_CHANNEL_ID)
-    if stock_channel:
-        try:
-            stock_message = await stock_channel.fetch_message(STOCK_MESSAGE_ID)
-            content = stock_message.content
-            new_content = re.sub(r"(Stock:)\s*[:\w_]+", f"Stock: {emoji}", content)
-            await stock_message.edit(content=new_content)
-        except:
-            pass
-
-    await interaction.response.send_message(f"✅ Status updated to {emoji}", ephemeral=True)
-
-
-# ---------------- Error Handling ----------------
-@embed_command.error
-@status_command.error
-async def admin_only_error(interaction: discord.Interaction, error):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message("❌ You must be an admin to use this command.", ephemeral=True)
-
-
-# ---------------- on_ready ----------------
+# ---------------- READY EVENT ----------------
 @bot.event
 async def on_ready():
-    await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.watching, name="for orders..")
-    )
     await bot.tree.sync()
-    print(f"✅ Logged in as {bot.user} | Status: Watching for orders..")
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="for orders.."))
+    print(f"✅ Logged in as {bot.user}")
 
-
-# ---------------- RUN BOT ----------------
+# ---------------- RUN ----------------
 keep_alive()
 bot.run(TOKEN)
