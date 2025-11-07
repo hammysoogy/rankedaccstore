@@ -9,7 +9,6 @@ import os
 
 # ---------------- CONFIG ----------------
 TOKEN = os.getenv("DISCORD_TOKEN")
-
 CHANNEL_ID = 1419693652732805224
 RULES_CHANNEL_ID = 1416158383039320117
 CATEGORY_ID = 1417817985825116253
@@ -49,17 +48,7 @@ def keep_alive():
 # ---------------- UTILITIES ----------------
 async def get_next_ticket_number(guild: discord.Guild):
     global ticket_counter
-    category = discord.utils.get(guild.categories, id=CATEGORY_ID)
-    if not category:
-        return 0
-    ticket_channels = [
-        c for c in category.text_channels if c.name.startswith("ticket-") and c.name[7:].isdigit()
-    ]
-    if not ticket_channels:
-        ticket_counter = 0
-    else:
-        numbers = [int(c.name.split("-")[1]) for c in ticket_channels]
-        ticket_counter = max(numbers) + 1
+    ticket_counter += 1
     return ticket_counter
 
 async def send_transcript(channel: discord.TextChannel):
@@ -118,32 +107,62 @@ class CloseButton(View):
         embed.set_author(name="Ticket Tool")
         await interaction.response.send_message(embed=embed, view=SupportControls(self.channel))
 
-class TicketModal(discord.ui.Modal, title="Ranked Enabled Account"):
-    quantity = discord.ui.TextInput(label="How many accounts?", required=True)
-    payment = discord.ui.TextInput(label="Payment method", required=True)
+# ---------------- ROBUX WORLD STYLE TICKET ----------------
+class TicketModal(discord.ui.Modal, title="Account Purchase Form"):
+    quantity = discord.ui.TextInput(
+        label="How many accounts do you want to buy?",
+        required=True,
+        placeholder="e.g. 1, 2, 5..."
+    )
+    payment = discord.ui.TextInput(
+        label="Payment method (Robux / Brainrots / etc.)",
+        required=True,
+        placeholder="e.g. Robux"
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         number = await get_next_ticket_number(guild)
         formatted_number = f"{number:03d}"
+
         category = discord.utils.get(guild.categories, id=CATEGORY_ID)
+        if not category:
+            await interaction.response.send_message("⚠️ Error: Could not find ticket category.", ephemeral=True)
+            return
+
+        # Build permissions
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
         }
+
+        # Add all admins
+        for member in guild.members:
+            if any(role.permissions.administrator for role in member.roles):
+                overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+        # Create ticket channel
         ticket_channel = await guild.create_text_channel(
-            name=f"ticket-{formatted_number}", category=category, overwrites=overwrites
+            name=f"ticket-{formatted_number}-{interaction.user.name}",
+            category=category,
+            overwrites=overwrites
         )
+
+        # Embed inside ticket
         embed = discord.Embed(
-            description=f"Please wait for a response. Read <#{RULES_CHANNEL_ID}> while waiting.",
-            color=discord.Color.dark_gray(),
+            title="Order",
+            description=f"Thank you for buying!\nPlease wait for a response from <@1418891812713795706> __BUY THIS GAMEPASS FOR 1 LVL 20 ACCOUNT.__ https://www.roblox.com/game-pass/1462417519/400\n\nRead <#{RULES_CHANNEL_ID}> while waiting.",
+            color=discord.Color.from_str("#A2FA50")
         )
         embed.add_field(name="Quantity", value=f"```{self.quantity.value}```", inline=False)
-        embed.add_field(name="Payment", value=f"```{self.payment.value}```", inline=False)
+        embed.add_field(name="Payment Method", value=f"```{self.payment.value}```", inline=False)
+        embed.set_footer(text=f"User: {interaction.user} • ID: {interaction.user.id}")
+
         await ticket_channel.send(embed=embed, view=CloseButton(ticket_channel))
         await interaction.response.send_message(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
 
+# ---------------- PURCHASE EMBED ----------------
 class PurchaseButton(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -197,15 +216,15 @@ async def update_embed(interaction: discord.Interaction, send_message: bool = Fa
         description=(
             "**# PAYMENT METHODS**\n"
             f"**# STATUS: {bot.status_emoji}**\n"
-            "> <:emoji:1415780267154477147>  **400 Robux**\n"
-            "> <:loscomb:1427626337140609034>  **~~Brainrots 15M/s~~** (offsale for now)\n\n"
+            "> <:emoji:1415780267154477147>  **`400 Robux`**\n"
+            "> <:loscomb:1427626337140609034>  **`15M/s`**\n\n"
             f"Check out <#{RULES_CHANNEL_ID}> to see that we’re legit!"
         ),
-        color=discord.Color.from_str("#FFA43D"),
+        color=discord.Color.from_str("#A2FA50"),
     )
     embed.set_author(name="Ranked Enabled Account")
     embed.set_image(
-        url="https://media.discordapp.net/attachments/1415427200232067186/1432412906284126278/wwdwdq_2_upscayl_4x_high-fidelity-4x_1_1.png?ex=6902f039&is=69019eb9&hm=9f6330f6995a97d1150e6baef00d4baa087b2ee5c66e5a8a64fc3a41ea6cb43e&=&format=webp&quality=lossless"
+        url="https://media.discordapp.net/attachments/1415427200232067186/1436024808734195795/image.png?format=webp&quality=lossless"
     )
     embed.set_footer(text="Thanks for buying!")
 
