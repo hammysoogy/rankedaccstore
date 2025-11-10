@@ -217,7 +217,8 @@ async def update_embed(interaction: discord.Interaction, send_message: bool = Fa
             "**# PAYMENT METHODS**\n"
             f"**# STATUS: {bot.status_emoji}**\n"
             "> <:emoji:1415780267154477147>  **`400 Robux`**\n"
-            "> <:emoji:1437458717963583538>  **`7day Zenith or Wave keys`**\n\n"
+            "> <:emoji:1437458717963583538>  **`7day Zenith or Wave keys`**\n"
+            "> <:emoji:1393923205592514604>  **`15 Invites`**\n\n"
             f"Check out <#{RULES_CHANNEL_ID}> to see that we’re legit!"
         ),
         color=discord.Color.from_str("#A2FA50"),
